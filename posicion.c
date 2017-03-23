@@ -61,7 +61,7 @@ main()
 
 	// Coeficientes del controlador <<Posicion>>:
 	int m=2;				// sizeof(b[]);
-	int n=2;				// sizeof(a[]);	// El primer coef. debe ser 0 porque es en diferencias
+	int n=1;				// sizeof(a[]);	// El primer coef. debe ser 0 porque es en diferencias
 
 	float a[2];				//float a[0]=0;		//a[0]<-a[1], a[1]<-a[2]... Porque la ecuación implementeda 
 							       	    //							es en diferencias, no en Z.
@@ -70,7 +70,7 @@ main()
 	a[0]=(float)1.0*0;			// Coeficientes para GdeZ
 	a[1]=(float)0.0;
 	b[0]=(float)0.1265;
-	b[1]=(float)0.1035;
+	b[1]=(float)-0.1035;
 
 	
 	// punteros a colas
@@ -95,7 +95,8 @@ main()
 
 	////EscribirSalidaPwm(cuentaPWMdeseada,cuentaPWMmax);
 	//EscribirSalidaPwm(1000,4000);
-
+	
+	printf("Sistema de control de Posicion SISO\n");
 	
 
 	while(1)
