@@ -76,7 +76,7 @@ main()
 
 	////EscribirSalidaPwm(cuentaPWMdeseada,cuentaPWMmax);
 	//EscribirSalidaPwm(1000,4000);
-
+	printf("Sistema de control de Velocidad SISO\n");
 	
 	while(1)
 	{
@@ -113,7 +113,7 @@ main()
 		/////// 5 - Regulador (GdeZ)
 		// Prototipo: float GdeZ(float *b, float *a, float *u, float *y, int m, int n)
 		//											  ek_rpm    uk_v
-		uk_v[0]=GdeZ(b, a, ek_rpm, uk_v, M, N);
+		uk_v[0]=GdeZ(b, a, ek_rpm, uk_v, M+1, N+1);
 		
 
 		/////// 6 - Convertimos de Vmotor deseada [-10V a +10V] a Duty Cycle[%]

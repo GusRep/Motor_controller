@@ -39,8 +39,8 @@ float GdeZ(float *b, float *a, float *u, float *y, int m, int n)
 {
 	float primero,segundo,out;
 	
-	primero=ProdEsc(b,u,m);
-	segundo=ProdEsc(a,y,n);  // los coeficientes de segundo, se restan
+	primero=ProdEsc(b,u,m+1);
+	segundo=ProdEsc(a+1,y+1,n);  // los coeficientes de segundo, se restan
 	out=primero-segundo;
 	return out;
 }
