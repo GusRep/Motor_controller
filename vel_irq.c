@@ -1,5 +1,8 @@
 // Sistema de control de Velocidad SISO por IRQs
 // Unicamicamente realimentamos velocidad.  (yk_rpm_o = tita1punto)
+// Recibe:  nada
+// Retorna: nada
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
@@ -10,135 +13,55 @@
 #define N	1						// Grado del polinomio y[n]
 #define TS	200						// Time Sampling 200 [ms]
 #define NO_VALIDO		 7777
-#define TACOM_X_MAX_v	 10.0
-#define TACOM_Y_MAX_rpm  100.0
-#define TACOM_X_MIN_v    -10.0
-#define TACOM_Y_MIN_rpm  -100.0
-#define ADAPT_X_MAX_v    5.0
-#define ADAPT_Y_MAX_v    10.0
-#define ADAPT_X_MIN_v    0.0
-#define ADAPT_Y_MIN_v    -10.0
-#define AD_X_MAX_c       1023
-#define AD_Y_MAX_v       5.0
-#define AD_X_MIN_c       0
-#define AD_Y_MIN_v       0.0
-#define PWM_X_MAX_v      10.0		
-#define PWM_Y_MAX_c      4095		// al tun-tun  Por ej. 2^12bits
-#define PWM_X_MIN_v      -10.0		
-#define PWM_Y_MIN_c      0			// al tun-tun
-#define DUTY_MAX		 100.0		// [%]
-#define DUTY_MIN		 0.0		// [%]
-  
+#define TIMER0			 0
+#define	TIMER1			 1
+
+// Variables globales
+float _yk_rpm_o;
+				// Coeficientes del controlador <<Velocidad>>:
+float _a[N+1];	// float a[0]=0;		//a[0]<-a[1], a[1]<-a[2]... Porque la ecuación implementeda 
+				//							es en diferencias, no en Z.
+float _b[M+1];
+float _ek_rpm[M+1];
+float _uk_v[N+1]; // uk[0] tension de exitacion del motor (OUTPUT CONTROLER)
+char _vectString[10];  // Buffer de 10 caracteres
+int _ControlType=0;  //Velocidad = 0   /   Posicion = 1
+int _Pote_active=1;		// 1 = Pote (mouse)  /  0 = Numero (teclado)
+int _ref;				// Referencia
+
 // Prototipos
-void lcd(int);
-void cola(float*, int, float);
+void loop_vel_irq(void);
+void display_vel_irq(void);
 void ini_cola(float*, int);
-float lineal (float, float, float, float, float);
-float GdeZ(float*, float*, float*, float*, int, int);
+void LecturaPantalla(void);
+int AdquiereValor(char*, char*);
 
 
-main()
+void main(void)
 {
-	float consigna_rpm_i;				// ref. de velocidad (IN)
-	
-	int valorLeido_c, u_PWM_c, consig_c;
-	
-	float yma_k_v, ym_k_v, yk_rpm_o, duty_porcentual;
+	_a[0]=(float)0.0*0;			// Coeficientes para GdeZ
+	_a[1]=(float)-1.0;
+	_b[0]=(float)0.6482;
+	_b[1]=(float)-0.5304;
 
-	// Signal Error (INPUT CONTROLER)
-	float ek_actual_rpm=0;
-	float ek_rpm[M+1];				
-
-	// uk[0] tension de exitacion del motor (OUTPUT CONTROLER)
-	float uk_v[N+1];				
-
-	// Coeficientes del controlador <<Velocidad>>:
-	// sizeof(b[]);
-	// sizeof(a[]);	// El primer coef. debe ser 0 porque es en diferencias
-
-	float a[N+1];			//float a[0]=0;		//a[0]<-a[1], a[1]<-a[2]... Porque la ecuación implementeda 
-							//							es en diferencias, no en Z.
-	float b[M+1];
-
-	a[0]=(float)0.0*0;			// Coeficientes para GdeZ
-	a[1]=(float)-1.0;
-	b[0]=(float)0.6482;
-	b[1]=(float)-0.5304;
-
-	
 	//Inicializamos las colas:
-	ini_cola(ek_rpm,M+1);
-	ini_cola(uk_v,N+1);
+	ini_cola(_ek_rpm,M+1);
+	ini_cola(_uk_v,N+1);
 	
+	//Inicializamos el vectString
+	_vectString[0]=0;
+
 	CrearSimulador();
 	LanzarSimulador();
 	Sleep(TS);			// Requerimiento del simulador
 
-	////EscribirSalidaPwm(cuentaPWMdeseada,cuentaPWMmax);
-	//EscribirSalidaPwm(1000,4000);
+	printf("Sistema de control de Velocidad SISO por IRQs\n");
 
+	EstablecerISRTeclado(LecturaPantalla);
+	EstablecerISRTemporizador (TIMER0,TS,loop_vel_irq);
+	EstablecerISRTemporizador (TIMER1,TS/10,display_vel_irq);
 	
-	while(1)
-	{
-		/////// 1 - Leemos valores
-		valorLeido_c=LeerEntradaAnalogica(0);			// Entrada 0
-		//printf("Valor de Velocidad = %d \n",valorLeido);
-		
-		consig_c=LeerEntradaAnalogica(2);				// Entrada 2
-		consigna_rpm_i=lineal((float)consig_c, TACOM_Y_MAX_rpm, TACOM_Y_MIN_rpm, AD_X_MAX_c, AD_X_MIN_c);	// ref.con el pote
-
-			
-
-		/////// 2 - Obtenemos yk_rpm_o (OUT)
-		// Convertimos de A/D a V analog adaptada (0V a 5V)
-		yma_k_v=lineal((float)valorLeido_c, AD_Y_MAX_v, AD_Y_MIN_v, AD_X_MAX_c, AD_X_MIN_c);
-
-		// Convertimos de V analog adaptada (0V a 5V) a V medida (-10V a 10V)
-		ym_k_v=lineal(yma_k_v, ADAPT_Y_MAX_v, ADAPT_Y_MIN_v, ADAPT_X_MAX_v, ADAPT_X_MIN_v);
-
-		// Convertimos de V medida (-10V a 10V) a Velocidad de salida [rpm]
-		yk_rpm_o=lineal(ym_k_v, TACOM_Y_MAX_rpm, TACOM_Y_MIN_rpm, TACOM_X_MAX_v, TACOM_X_MIN_v);
-		//Escribimos en el display de 7 segmentos
-		lcd((int)yk_rpm_o);
-
-		/////// 3 - Sumador --> Signal Error (ek_rpm)
-		ek_actual_rpm=consigna_rpm_i-yk_rpm_o;
-
-
-		/////// 4 - Desplaza tablas temporales 
-		cola(ek_rpm, M+1,ek_actual_rpm);
-		cola(uk_v, N+1, NO_VALIDO);	// NO_VALIDO será sobreescrito por GdeZ (uk_actual_v)	
-
-
-		/////// 5 - Regulador (GdeZ)
-		// Prototipo: float GdeZ(float *b, float *a, float *u, float *y, int m, int n)
-		//											  ek_rpm    uk_v
-		uk_v[0]=GdeZ(b, a, ek_rpm, uk_v, M, N);
-		
-
-		/////// 6 - Convertimos de Vmotor deseada [-10V a +10V] a Duty Cycle[%]
-		duty_porcentual=lineal(*uk_v, DUTY_MAX, DUTY_MIN, TACOM_X_MAX_v, TACOM_X_MIN_v);
-		
-		if(duty_porcentual>100)		// Acotamos la salida del PWM
-		{
-			//printf("duty_porcentual = %f\n",duty_porcentual);
-			duty_porcentual=100;
-		}
-		if(duty_porcentual<0)
-		{
-			//printf("duty_porcentual = %f\n",duty_porcentual);
-			duty_porcentual=0;
-		}
-
-		/////// 7 - PWM
-		u_PWM_c=(int)lineal(duty_porcentual, PWM_Y_MAX_c, PWM_Y_MIN_c, DUTY_MAX, DUTY_MIN);
-		EscribirSalidaPwm((int)u_PWM_c, PWM_Y_MAX_c);
-
-		Sleep(TS);
-
-	}
-
-	fflush(stdin);
-	getchar();
+	
+	Idle();
 
 }
